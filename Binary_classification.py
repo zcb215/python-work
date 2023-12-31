@@ -43,9 +43,9 @@ numeric_features = scaler.fit_transform(numeric_features)
 text_features = scaler.fit_transform(text_features)
 
 # 将特征转换为Tensor
-#text_features = torch.Tensor(text_features)
-#numeric_features = torch.Tensor(numeric_features.values)
-#numeric_features = torch.Tensor(numeric_features.values)
+# text_features = torch.Tensor(text_features)
+# numeric_features = torch.Tensor(numeric_features.values)
+# numeric_features = torch.Tensor(numeric_features.values)
 text_features = torch.Tensor(text_features)
 numeric_features = torch.Tensor(numeric_features)
 
@@ -56,12 +56,13 @@ train_features, test_features, train_target, test_target = train_test_split(
     features, target, test_size=0.2, random_state=42
 )
 
+
 # 定义模型
 class ClassificationModel(nn.Module):
     def __init__(self, input_size):
         super(ClassificationModel, self).__init__()
         self.fc1 = nn.Linear(input_size, 64)
-        #防止过拟合每次丢失0.2神经元
+        # 防止过拟合每次丢失0.2神经元
         self.dropout = nn.Dropout(0.2)
         self.relu = nn.ReLU()
         self.fc2 = nn.Linear(64, 1)
@@ -75,7 +76,8 @@ class ClassificationModel(nn.Module):
         x = self.sigmoid(x)
         return x
 
-#model = ClassificationModel(features.shape[1])
+
+# model = ClassificationModel(features.shape[1])
 
 class ClassificationModelsecond(nn.Module):
     def __init__(self, input_size):
@@ -98,14 +100,17 @@ class ClassificationModelsecond(nn.Module):
         x = self.sigmoid(x)
         return x
 
+
 model = ClassificationModelsecond(features.shape[1])
 # 定义损失函数和优化器
 criterion = nn.BCELoss()
-#优化器加上学习率以及惩罚率  两者的参数可以调整寻找到最佳
-optimizer = optim.Adam(model.parameters(), lr=0.001,weight_decay=0.01)
+# 优化器加上学习率以及惩罚率  两者的参数可以调整寻找到最佳
+optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.01)
 
 # 训练模型
 num_epochs = 100
+losses = []
+plt.figure(figsize=(8, 6))
 for epoch in range(num_epochs):
     model.train()
     optimizer.zero_grad()
@@ -113,11 +118,14 @@ for epoch in range(num_epochs):
     loss = criterion(outputs, train_target.float())
     loss.backward()
     optimizer.step()
-
+    losses.append(loss.item())
     # 每10个epoch打印一次损失
-    if (epoch+1) % 10 == 0:
-        print(f'Epoch {epoch+1}/{num_epochs}, Loss: {loss.item()}')
-
+    if (epoch + 1) % 10 == 0:
+        print(f'Epoch {epoch + 1}/{num_epochs}, Loss: {loss.item()}')
+plt.plot(losses)
+plt.title("loss")
+plt.ylabel("loss")
+plt.show()
 # 在测试集上进行预测
 model.eval()  # 设置模型为评估模式，即预测模式
 
