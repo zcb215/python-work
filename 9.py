@@ -1,0 +1,142 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import pandas as pd
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from matplotlib import pyplot as plt
+import torch.nn.functional as F
+from sklearn.preprocessing import MinMaxScaler
+
+# 读取数据
+ifname = r"archive\ratings.csv"
+ifname2 = r"archive\movies.csv"
+ifname3 = r"archive\tags.csv"
+movie_data = pd.read_csv(ifname2)
+tags_data = pd.read_csv(ifname3)
+data = pd.read_csv(ifname)
+data = data.drop('timestamp', axis=1)
+merged_data = pd.merge(data, tags_data, on=['userId', 'movieId'], how='left')
+merged_data_second = pd.merge(merged_data, movie_data, on='movieId', how='left')
+merged_data_second.drop('title', axis=1, inplace=True)
+merged_data_second.drop('timestamp', axis=1, inplace=True)
+data = merged_data_second
+# 特征选择
+data['tag'].fillna('', inplace=True)
+text_features = data['genres'] + ' ' + data['tag']
+numeric_features = data[['userId', 'movieId']]
+target = data['rating']
+print(data['rating'].mean())
+# 将最终评分转换为二分类标签
+target = torch.Tensor(target.values).float()
+target = torch.where(target >= 3.5, 1, 0).unsqueeze(1)
+
+# 将文本特征转换为词袋特征
+vectorizer = CountVectorizer(token_pattern=r'\b\w+\b|\|')
+text_features = text_features.fillna('')
+text_features = vectorizer.fit_transform(text_features).toarray()
+print(text_features.shape)
+# 对数值型特征进行最小-最大缩放归一化
+scaler = MinMaxScaler()
+numeric_features = scaler.fit_transform(numeric_features)
+text_features = scaler.fit_transform(text_features)
+
+# 将特征转换为Tensor
+#text_features = torch.Tensor(text_features)
+#numeric_features = torch.Tensor(numeric_features.values)
+#numeric_features = torch.Tensor(numeric_features.values)
+text_features = torch.Tensor(text_features)
+numeric_features = torch.Tensor(numeric_features)
+
+# 合并特征
+features = torch.cat((text_features, numeric_features), dim=1)
+#print(features.shape)   torch.Size([102677, 1727])
+#
+# 划分训练集和测试集
+train_features, test_features, train_target, test_target = train_test_split(
+    features, target, test_size=0.2, random_state=42
+)
+
+# 划分区间
+text_dim = text_features.shape[1]
+numeric_dim = numeric_features.shape[1]
+train_text_features = train_features[:, :text_dim]
+train_numeric_features = train_features[:, text_dim:]
+test_text_features = test_features[:, :text_dim]
+test_numeric_features = test_features[:, text_dim:]
+#print(train_numeric_features.shape,train_text_features.shape,test_numeric_features.shape,test_text_features.shape)
+#torch.Size([82141, 2]) torch.Size([82141, 1725]) torch.Size([20536, 2]) torch.Size([20536, 1725])
+
+# 定义模型
+class ClassificationModel(nn.Module):
+    def __init__(self, features,numeric_features,text_features, hidden_size=64, output_size=1):
+        super(ClassificationModel, self).__init__()
+        self.fc1 = nn.Linear(features.shape[1], hidden_size)
+        self.fc2 = nn.Linear(hidden_size * 3, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, output_size)
+        self.fc3_numeric_features = nn.Linear(numeric_features.shape[1], hidden_size)
+        self.fc3_text_features = nn.Linear(text_features.shape[1], hidden_size)
+        #Batch Normalization（批归一化）可以应用于不同维度的数据。
+        # 在PyTorch中，nn.BatchNorm1d用于对一维数据进行批归一化，
+        # 而nn.BatchNorm2d用于对二维数据进行批归一化。
+        self.b1 = nn.BatchNorm1d(hidden_size)
+        self.b2 = nn.BatchNorm1d(hidden_size)
+        self.dropout = nn.Dropout(p=0.2)
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+        self.weight_numeric_features = nn.Parameter(torch.tensor([0.2]))
+        self.weight_text_features = nn.Parameter(torch.tensor([0.8]))
+
+    def forward(self, x, numeric_features, text_features):
+        out = self.fc1(x)
+        out = self.b1(out)
+        out = self.relu(out)
+        out = self.dropout(out)
+
+        out_numeric_features = self.fc3_numeric_features(numeric_features) * self.weight_numeric_features
+        out_text_features = self.fc3_text_features(text_features) * self.weight_text_features
+
+        out = torch.cat([out, out_numeric_features, out_text_features], dim=1)
+        out = self.fc2(out)
+        out = self.b2(out)
+        out = self.relu(out)
+        out = self.dropout(out)
+
+        out = self.fc3(out)
+        out = self.sigmoid(out)
+
+        return out
+
+model = ClassificationModel(features,numeric_features,text_features)
+
+# 定义损失函数和优化器
+criterion = nn.BCELoss()
+#优化器加上学习率以及惩罚率  两者的参数可以调整寻找到最佳
+optimizer = optim.Adam(model.parameters(), lr=0.01,weight_decay=0.01)
+
+# 训练模型
+num_epochs = 100
+for epoch in range(num_epochs):
+    model.train()
+    optimizer.zero_grad()
+    outputs = model(train_features,train_numeric_features,train_text_features)
+    loss = criterion(outputs, train_target.float())
+    loss.backward()
+    optimizer.step()
+
+    # 每10个epoch打印一次损失
+    if (epoch+1) % 10 == 0:
+        print(f'Epoch {epoch+1}/{num_epochs}, Loss: {loss.item()}')
+
+# 在测试集上进行预测
+model.eval()  # 设置模型为评估模式，即预测模式
+
+with torch.no_grad():
+    test_outputs = model(test_features,test_numeric_features,test_text_features)
+    test_pred = torch.where(test_outputs >= 0.5, 1, 0)
+    accuracy = accuracy_score(test_target, test_pred)
+    precision = precision_score(test_target, test_pred)
+    recall = recall_score(test_target, test_pred)
+    f1 = f1_score(test_target, test_pred)
+    print(f'Test Accuracy: {accuracy}, Precision: {precision}, Recall: {recall}, F1-score: {f1}')
