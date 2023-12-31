@@ -126,6 +126,10 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 num_epochs = 10
 batch_size = 32
 sequence_length = 1
+train_losses = []
+test_losses = []
+plt.figure(figsize=(8,6))
+
 input_size = features.shape[1]  # 根据实际情况调整 input_size 的值
 for epoch in range(num_epochs):
     model.train()
@@ -147,7 +151,7 @@ for epoch in range(num_epochs):
 
     # 计算训练集的平均损失
     train_loss /= len(train_dataset)
-
+    train_losses.append(train_loss)
     # 在测试集上评估模型
     model.eval()
     test_loss = 0.0
@@ -160,9 +164,16 @@ for epoch in range(num_epochs):
 
     # 计算测试集的平均损失
     test_loss /= len(test_dataset)
-
+    test_losses.append(test_loss)
     print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}")
 
+plt.plot(train_losses,label='train loss')
+plt.plot(test_losses,label='test loss')
+plt.legend()
+plt.title("train and test loss")
+plt.xlabel("epoch")
+plt.ylabel("loss")
+plt.show()
 # 使用训练好的模型进行预测
 model.eval()
 thetrue = []
